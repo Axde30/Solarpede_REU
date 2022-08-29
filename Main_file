@@ -1,0 +1,36 @@
+import serpenbot_neural_PID_trainer_controller_fixed
+from tera_term_pt_1 import *
+from serpenbot_neural_PID_trainer_controller_fixed import *
+from tracking_v4 import *
+import time
+
+print("DO NOT TOUCH THE PROGRAM WHILE RUNNING, THE PROGRAM USES PYAUTOGUI WHICH WILL INPUT TEXT ON ANY WINDOW THAT IS CURRENTLY OPEN")
+time.sleep(4)
+
+
+action_dim = 4
+state_dim = 3
+var_1 = serpenbot_neural_PID_trainer_controller_fixed.HIDDEN_UNITES  #DO NOT CHANGE
+var_2 = serpenbot_neural_PID_trainer_controller_fixed.LEARNING_RATE #DO NOT CHANGE
+#tera_term_pt_1.number_of_rounds
+recording = record_session()
+get_coordinates(recording)
+
+plot_data()
+
+solarpede = serpenbot_neural_PID_trainer_controller_fixed.SerpenbotTrainerController()
+solarpede.init_state(0, 5)
+print(solarpede.save_model())
+solarpede.test()
+
+
+'''
+Machine = serpenbot_neural_PID_trainer_controller_fixed.Trainer(action_dim, state_dim, var_1, var_2)
+Machine_2 = serpenbot_neural_PID_trainer_controller_fixed.Controller()
+print(Machine.calculate_delta_time(5))
+print(Machine.calculate_delta_time(14))
+
+Machine.calculate_velocity([0, 4, 5],32)
+Machine.load_model()
+
+'''
