@@ -1,0 +1,279 @@
+from __future__ import print_function
+from __future__ import division
+import cv2
+import csv
+
+import easygui as easygui
+import numpy as np
+import matplotlib.pyplot as plt
+import argparse
+import math
+from math import atan2, cos, sin, sqrt, pi
+import tera_term_pt_1
+from tera_term_pt_1 import subprocess
+
+#input action: M = "m011110"
+ #       input tag [0, 0, 0, 1, 0, 0, 0, 0]
+  #      output [x, y, theta]
+#THESE ARE THE SAMPLE CODE
+# Todo: 1. define actions
+#       2. define tags
+#       3. randomize pick an action with random period of time
+#       4. training neural networks
+
+
+# M = "Action group 4"
+# M = "Action group 3"
+# M = "Action group 2"
+
+
+M = "Test 3" #title for the graph
+# P = "p1"
+# P = "p2"
+# P = "p4"
+
+# P = "p6"
+P = tera_term_pt_1.pulse#change with the teraterm file. not here.
+# P = "p10"
+# P = pulse
+CSV_PATH = r"C:\Users\axelq\OneDrive - Eastern Kentucky University\Documents\CSV for tracking (REU)\solarpede\CSV files"
+VIDEO_PATH = r"C:\Users\axelq\OneDrive - Eastern Kentucky University\Documents\CSV for tracking (REU)\solarpede\videos"
+
+
+movement = tera_term_pt_1
+CONVERSION_FACTOR = float(easygui.enterbox("Please enter the numerical conversion factor, in micrometers/pixel: (default is 14.5)"))
+#CONVERSION_FACTOR = float(1)
+CAPTURE = cv2.VideoCapture(0)
+CAPTURE.set(cv2.CAP_PROP_FRAME_WIDTH, 1600)#1920
+CAPTURE.set(cv2.CAP_PROP_FRAME_HEIGHT, 1200)#1000
+# Fast frame rate, low accuracy
+# TRACKER = cv2.TrackerMOSSE_create()
+# Slow frame rate, high accuracy
+TRACKER = cv2.TrackerCSRT_create()
+IMAGE = CAPTURE.read()[1]
+
+
+def record_session():
+    """
+    Records the trial.
+    :return: n/a
+    """
+    print(M + '_' + P)
+    frame_width = int(CAPTURE.get(3))
+    frame_height = int(CAPTURE.get(4))
+    size = (frame_width, frame_height)
+    recorded_video = cv2.VideoWriter(VIDEO_PATH + M + '_' + P + '.avi',
+                                     cv2.VideoWriter_fourcc(*'MJPG'),
+                                     cv2.CAP_PROP_FPS, size)
+    return recorded_video
+
+
+def draw_box(image, box):
+    """
+    Maintains a line box around the desired object.
+    :param image: The image captured by the camera.
+    :param box: Details about the box around the object
+    :return: n/a
+    """
+    # Get coordinates.
+    # x is the pixel value corresponding to horizontal movement of the object.
+    # (i.e. x = 0 is the far left of the screen, bigger number is further to the right)
+    # y is the pixel value corresponding to vertical movement of the object.
+    x, y, w, h = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+    cv2.rectangle(image, (x, y), ((x + w), (y + h)), (255, 0, 255), 3, 1)
+    cv2.putText(image, "Tracking", (25, 75), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 255, 255), 2)
+    # return x, y, w, h
+
+
+def plot_data():
+    """
+    Plots the data from the CSV file generated.
+    :return: n/a
+    """
+    x0 = []
+    y0 = []
+    time0 = []
+
+    with open(CSV_PATH + M + '_' + P + '.csv', 'r') as read_obj:
+        # pass the file object to reader() to get the reader object
+        csv_reader = csv.reader(read_obj)
+        # Iterate over each row in the csv using reader object
+        for row in csv_reader:
+            # row variable is a list that represents a row in csv
+            x0.append(row[0])
+            y0.append(row[1])
+            time0.append(row[2])
+    x0 = np.asarray(x0, dtype='float64')
+    y0 = np.asarray(y0, dtype='float64')
+    m0, b0 = np.polyfit(x0, y0, 1)
+    print('m0:', m0)
+    plt.plot(x0, y0, 'r', marker='o')
+    plt.plot(x0, m0 * x0 + b0, 'r', label=M + '_' + P)
+    plt.legend()
+    plt.show()
+
+
+def draw_axis(img, p_, q_, colour, scale):
+    """
+    Visualizes a contour vector.
+    :param img: the scene of the displayed video
+    :param p_: array of x coordinates of the vector
+    :param q_: array of y coordinates of the vector
+    :param colour: desired color of the vectors
+    :param scale: int scale of the contour vector
+    :return:
+    """
+
+    p = list(p_)
+    q = list(q_)
+
+    angle = atan2(p[1] - q[1], p[0] - q[0])  # angle in radians
+    hypotenuse = sqrt((p[1] - q[1]) * (p[1] - q[1]) + (p[0] - q[0]) * (p[0] - q[0]))
+    # Here we lengthen the arrow by a factor of scale
+    q[0] = p[0] - scale * hypotenuse * cos(angle)
+    q[1] = p[1] - scale * hypotenuse * sin(angle)
+    cv2.line(img, (int(p[0]), int(p[1])), (int(q[0]), int(q[1])), colour, 1, cv2.LINE_AA)
+    # create the arrow hooks
+    p[0] = q[0] + 9 * cos(angle + pi / 4)
+    p[1] = q[1] + 9 * sin(angle + pi / 4)
+    cv2.line(img, (int(p[0]), int(p[1])), (int(q[0]), int(q[1])), colour, 1, cv2.LINE_AA)
+    p[0] = q[0] + 9 * cos(angle - pi / 4)
+    p[1] = q[1] + 9 * sin(angle - pi / 4)
+    cv2.line(img, (int(p[0]), int(p[1])), (int(q[0]), int(q[1])), colour, 1, cv2.LINE_AA)
+
+
+def get_orientation(pts, img):
+    """
+    Find the orientation of an object
+    :param pts: array of poinrs on the image for reference
+    :param img: the scene of the displayed video
+    :return: object_max_contour_index
+    """
+    sz = len(pts)
+    data_pts = np.empty((sz, 2), dtype=np.float64)
+    for i in range(data_pts.shape[0]):
+        data_pts[i, 0] = pts[i, 0, 0]
+        data_pts[i, 1] = pts[i, 0, 1]
+    # Perform PCA analysis
+    mean = np.empty(0)
+    mean, eigenvectors, eigenvalues = cv2.PCACompute2(data_pts, mean)
+    # Store the center of the object
+    center = (int(mean[0, 0]), int(mean[0, 1]))
+
+    cv2.circle(img, center, 3, (255, 0, 255), 2)
+    p1 = (
+        center[0] + 0.02 * eigenvectors[0, 0] * eigenvalues[0, 0],
+        center[1] + 0.02 * eigenvectors[0, 1] * eigenvalues[0, 0])
+    p2 = (
+        center[0] - 0.02 * eigenvectors[1, 0] * eigenvalues[1, 0],
+        center[1] - 0.02 * eigenvectors[1, 1] * eigenvalues[1, 0])
+    draw_axis(img, center, p1, (0, 255, 0), 1)
+    draw_axis(img, center, p2, (255, 255, 0), 5)
+    angle = atan2(eigenvectors[0, 1], eigenvectors[0, 0])  # orientation in radians
+
+    return angle
+
+
+def find_max_contour(contours):
+    """
+    Calculates contour length
+    :param contours: Array of detected contour vectors on the object
+    :return: object_max_contour_index
+    """
+
+    max_contour_index = 0
+    object_max_contour_index = 0
+    max_contour_length = 0
+
+    for i, c in enumerate(contours):
+        temp_contour_length = len(c)
+        if temp_contour_length > max_contour_length:
+            object_max_contour_index = max_contour_index
+            max_contour_index = i
+            max_contour_length = temp_contour_length
+
+    return object_max_contour_index
+
+
+def get_coordinates(result):
+    """
+    Handles the coordinates of the object and stores them.
+    :param result: The video recorder
+    :raise
+    :keyword
+    :return: n/a
+    """
+    #subprocess.Popen(movement.filepath_teraterm)
+    #movement.initialize()
+
+
+    bbox = cv2.selectROI("Tracking", IMAGE, False)
+    TRACKER.init(IMAGE, bbox)
+
+    i = 1
+
+
+    while i <= 1:
+        tera_term_pt_1.tera_actuator_groups()
+        i += 1
+
+    csv_file = open(CSV_PATH + M + '_' + P + '.csv', 'w', newline='')
+    # csv_file = open('test.csv', 'w', newline='')
+
+    csv_file_writer = csv.writer(csv_file)
+    while True:
+        timer = cv2.getTickCount()
+        img = CAPTURE.read()[1]
+        x_coordinate = bbox[0] * CONVERSION_FACTOR
+        y_coordinate = bbox[1] * CONVERSION_FACTOR
+        x_coordinate_string = "X Coordinate (micrometers): " + str("%.2f" % x_coordinate)
+        y_coordinate_string = "Y Coordinate (micrometers): " + str("%.2f" % y_coordinate)
+        '''
+        command_1 = tera_term_pt_1.actuator_1()
+        command_2 = tera_term_pt_1.actuator_2()
+        command_3 = tera_term_pt_1.actuator_3()
+        command_4 = tera_term_pt_1.actuator_4()
+        command_5 = tera_term_pt_1.actuator_5()
+        command_6 = tera_term_pt_1.actuator_6()
+        command_7 = tera_term_pt_1.actuator_7()
+        command_8 = tera_term_pt_1.actuator_8()
+        '''
+
+        x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+        box_img = img[y:y + h, x:x + w]
+        gray = cv2.cvtColor(box_img, cv2.COLOR_BGR2GRAY)
+        bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        contours, _ = cv2.findContours(bw, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+        max_contour_index = find_max_contour(contours)
+        cv2.drawContours(box_img, contours, max_contour_index, (0, 0, 255), 2)
+        angle = get_orientation(contours[max_contour_index], box_img)
+
+        csv_file_writer.writerow([x_coordinate, y_coordinate, angle, cv2.getTickCount() / cv2.getTickFrequency()])
+        result.write(img)
+        success, bbox = TRACKER.update(img)
+
+        if success:
+            draw_box(img, bbox)
+        else:
+            cv2.putText(img, "Lost", (25, 75), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 0, 255), 2)
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+        cv2.putText(img, str(int(fps)), (25, 50), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.putText(img, x_coordinate_string, (150, 50), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 0, 0), 2)
+        cv2.putText(img, y_coordinate_string, (150, 75), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 0, 0), 2)
+
+        cv2.imshow("Tracking", img)
+        if cv2.waitKey(1) & 0xff == ord('q'):
+            break
+    CAPTURE.release()
+    result.release()
+    # Closes all the frames
+    cv2.destroyAllWindows()
+    csv_file.close()
+
+
+'''
+if __name__ == "__main__":
+    recording = record_session()
+    get_coordinates(recording)
+    plot_data()
+'''
